@@ -5,6 +5,12 @@ const User = require('../models/User');
 const Notification = require('../models/Notification');
 const auth = require('../middleware/auth');
 
+// Map to store last like/unlike timestamps
+const lastLikeAction = new Map();
+
+// Helper function to generate a unique key for user-post combination
+const getLikeKey = (userId, postId) => `${userId}-${postId}`;
+
 // Create a post
 router.post('/', auth, async (req, res) => {
     try {
@@ -167,7 +173,15 @@ router.delete('/:id', auth, async (req, res) => {
 
 // Like/Unlike post
 router.put('/like/:id', auth, async (req, res) => {
+    console.log('============ LIKE/UNLIKE ROUTE HIT ============');
+    console.log('Request received for post:', req.params.id);
+    console.log('User ID:', req.user._id);
+    console.log('=============================================');
+    
     try {
+        const userId = req.user._id;
+
+        // First check if the post exists
         const post = await Post.findById(req.params.id)
             .populate('user', 'username');
 
@@ -175,32 +189,46 @@ router.put('/like/:id', auth, async (req, res) => {
             return res.status(404).json({ message: 'Post not found' });
         }
 
-        const likeIndex = post.likes.indexOf(req.user._id);
-        if (likeIndex === -1) {
-            // Add like
-            post.likes.push(req.user._id);
+        // Check if user has already liked the post
+        const hasLiked = post.likes.includes(userId);
 
-            // Create notification if the post owner is not the one liking
-            if (post.user._id.toString() !== req.user._id.toString()) {
-                const content = `"${post.content.substring(0, 30)}${post.content.length > 30 ? '...' : ''}" liked by ${req.user.username}`;
-
-                const notification = new Notification({
-                    recipient: post.user._id,
-                    sender: req.user._id,
-                    post: post._id,
-                    type: 'like',
-                    content
-                });
-
-                await notification.save();
+        // Use findOneAndUpdate with atomic operators
+        const updatedPost = await Post.findOneAndUpdate(
+            { _id: req.params.id },
+            hasLiked
+                ? { $pull: { likes: userId } }  // Remove like if already liked
+                : { $addToSet: { likes: userId } },  // Add like if not liked
+            {
+                new: true,
+                runValidators: true
             }
-        } else {
-            // Remove like
-            post.likes.splice(likeIndex, 1);
+        ).populate('user', 'username profilePicture');
+
+        // Create notification if the post owner is not the one liking and it's a new like
+        if (!hasLiked && post.user._id.toString() !== userId.toString()) {
+            const content = `"${post.content.substring(0, 30)}${post.content.length > 30 ? '...' : ''}" liked by ${req.user.username}`;
+
+            const notification = new Notification({
+                recipient: post.user._id,
+                sender: userId,
+                post: post._id,
+                type: 'like',
+                content
+            });
+
+            await notification.save();
         }
 
-        await post.save();
-        res.json(post);
+        // Log the operation
+        console.log('==================== LIKE OPERATION ====================');
+        console.log('Post ID:', req.params.id);
+        console.log('User ID:', userId);
+        console.log('Action:', hasLiked ? 'UNLIKED' : 'LIKED');
+        console.log('Likes Count:', updatedPost.likes.length);
+        console.log('Updated Post:', JSON.stringify(updatedPost, null, 2));
+        console.log('=====================================================');
+
+        res.json(updatedPost);
     } catch (error) {
         console.error('Error in like post:', error);
         res.status(500).json({ message: 'Server error' });
