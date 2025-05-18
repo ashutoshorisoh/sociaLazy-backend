@@ -50,8 +50,8 @@ router.post('/:postId', auth, async (req, res) => {
     }
 });
 
-// Get comments for a post
-router.get('/post/:postId', auth, async (req, res) => {
+// Get comments for a post - No auth required
+router.get('/post/:postId', async (req, res) => {
     try {
         const comments = await Comment.find({ post: req.params.postId })
             .sort({ createdAt: -1 })
