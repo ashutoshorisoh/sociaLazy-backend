@@ -166,27 +166,49 @@ router.get('/profile/:id', async (req, res) => {
 // Delete user by username
 router.delete('/username/:username', auth, async (req, res) => {
     try {
+        console.log('============ DELETE USER ROUTE HIT ============');
+        console.log('Username to delete:', req.params.username);
+        console.log('User ID requesting delete:', req.user._id);
+
         const user = await User.findOne({ username: req.params.username });
         
         if (!user) {
+            console.log('User not found');
             return res.status(404).json({ message: 'User not found' });
         }
 
+        if (user._id.toString() !== req.user._id.toString()) {
+            console.log('Unauthorized delete attempt');
+            return res.status(401).json({ message: 'Not authorized' });
+        }
+
         // Delete all posts by this user
-        await Post.deleteMany({ user: user._id });
+        const deletedPosts = await Post.deleteMany({ user: user._id });
+        console.log(`Deleted ${deletedPosts.deletedCount} posts`);
 
         // Remove user from followers and following lists of other users
-        await User.updateMany(
+        const followersUpdate = await User.updateMany(
             { followers: user._id },
             { $pull: { followers: user._id } }
         );
-        await User.updateMany(
+        const followingUpdate = await User.updateMany(
             { following: user._id },
             { $pull: { following: user._id } }
         );
+        console.log(`Removed user from ${followersUpdate.modifiedCount} followers lists`);
+        console.log(`Removed user from ${followingUpdate.modifiedCount} following lists`);
 
         // Delete the user
         await user.deleteOne();
+        console.log('User successfully deleted');
+        console.log('Deleted user details:', {
+            userId: user._id,
+            username: user.username,
+            email: user.email,
+            followersCount: user.followers.length,
+            followingCount: user.following.length
+        });
+        console.log('=============================================');
 
         res.json({ message: 'User deleted successfully' });
     } catch (error) {

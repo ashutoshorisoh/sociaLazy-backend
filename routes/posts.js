@@ -154,19 +154,36 @@ router.put('/:id', auth, async (req, res) => {
 // Delete post
 router.delete('/:id', auth, async (req, res) => {
     try {
+        console.log('============ DELETE POST ROUTE HIT ============');
+        console.log('Post ID to delete:', req.params.id);
+        console.log('User ID requesting delete:', req.user._id);
+
         const post = await Post.findById(req.params.id);
 
         if (!post) {
+            console.log('Post not found');
             return res.status(404).json({ message: 'Post not found' });
         }
 
         if (post.user.toString() !== req.user._id.toString()) {
+            console.log('Unauthorized delete attempt');
             return res.status(401).json({ message: 'Not authorized' });
         }
 
-        await post.remove();
+        await Post.deleteOne({ _id: post._id });
+        console.log('Post successfully deleted');
+        console.log('Deleted post details:', {
+            postId: post._id,
+            userId: post.user,
+            content: post.content.substring(0, 50) + '...',
+            likesCount: post.likes.length,
+            commentsCount: post.comments.length
+        });
+        console.log('=============================================');
+
         res.json({ message: 'Post removed' });
     } catch (error) {
+        console.error('Error deleting post:', error);
         res.status(500).json({ message: 'Server error' });
     }
 });

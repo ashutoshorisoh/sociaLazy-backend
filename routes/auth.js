@@ -8,14 +8,63 @@ const Post = require('../models/Post');
 
 // Register user
 router.post('/register', [
-    body('username').trim().isLength({ min: 3 }).escape(),
+    body('username')
+        .trim()
+        .isLength({ min: 3 })
+        .withMessage('Username must be at least 3 characters long')
+        .matches(/^[a-zA-Z0-9_]+$/)
+        .withMessage('Username can only contain letters, numbers, and underscores')
+        .custom(value => {
+            // Check for potentially harmful patterns
+            const harmfulPatterns = [
+                /console\.log/i,
+                /alert\(/i,
+                /eval\(/i,
+                /script/i,
+                /function/i,
+                /document\./i,
+                /window\./i,
+                /localStorage/i,
+                /sessionStorage/i,
+                /cookie/i,
+                /fetch\(/i,
+                /axios/i,
+                /http/i,
+                /https/i,
+                /\.js/i,
+                /\.php/i,
+                /\.html/i,
+                /\.css/i,
+                /\.sql/i,
+                /\.env/i,
+                /process\./i,
+                /require\(/i,
+                /import/i,
+                /export/i,
+                /module\./i,
+                /__dirname/i,
+                /__filename/i
+            ];
+
+            if (harmfulPatterns.some(pattern => pattern.test(value))) {
+                throw new Error('Username contains unacceptable content');
+            }
+            return true;
+        }),
     body('email').isEmail().normalizeEmail(),
     body('password').isLength({ min: 6 })
 ], async (req, res) => {
     try {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.status(400).json({ errors: errors.array() });
+            return res.status(400).json({ 
+                success: false,
+                message: 'Validation failed',
+                errors: errors.array().map(err => ({
+                    field: err.param,
+                    message: err.msg
+                }))
+            });
         }
 
         const { username, email, password } = req.body;
@@ -23,7 +72,11 @@ router.post('/register', [
         // Check if user already exists
         let user = await User.findOne({ $or: [{ email }, { username }] });
         if (user) {
-            return res.status(400).json({ message: 'User already exists' });
+            return res.status(400).json({ 
+                success: false,
+                message: 'User already exists',
+                error: 'USER_EXISTS'
+            });
         }
 
         // Create new user
@@ -43,6 +96,7 @@ router.post('/register', [
         );
 
         res.status(201).json({
+            success: true,
             token,
             user: {
                 id: user._id,
@@ -51,7 +105,12 @@ router.post('/register', [
             }
         });
     } catch (error) {
-        res.status(500).json({ message: 'Server error' });
+        console.error('Registration error:', error);
+        res.status(500).json({ 
+            success: false,
+            message: 'Server error',
+            error: 'REGISTRATION_FAILED'
+        });
     }
 });
 

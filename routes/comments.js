@@ -89,13 +89,19 @@ router.put('/:id', auth, async (req, res) => {
 // Delete comment
 router.delete('/:id', auth, async (req, res) => {
     try {
+        console.log('============ DELETE COMMENT ROUTE HIT ============');
+        console.log('Comment ID to delete:', req.params.id);
+        console.log('User ID requesting delete:', req.user._id);
+
         const comment = await Comment.findById(req.params.id);
 
         if (!comment) {
+            console.log('Comment not found');
             return res.status(404).json({ message: 'Comment not found' });
         }
 
         if (comment.user.toString() !== req.user._id.toString()) {
+            console.log('Unauthorized delete attempt');
             return res.status(401).json({ message: 'Not authorized' });
         }
 
@@ -106,9 +112,20 @@ router.delete('/:id', auth, async (req, res) => {
         );
         await post.save();
 
-        await comment.remove();
+        await Comment.deleteOne({ _id: comment._id });
+        console.log('Comment successfully deleted');
+        console.log('Deleted comment details:', {
+            commentId: comment._id,
+            userId: comment.user,
+            postId: comment.post,
+            content: comment.content.substring(0, 50) + '...',
+            likesCount: comment.likes.length
+        });
+        console.log('===============================================');
+
         res.json({ message: 'Comment removed' });
     } catch (error) {
+        console.error('Error deleting comment:', error);
         res.status(500).json({ message: 'Server error' });
     }
 });
