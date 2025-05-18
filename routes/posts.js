@@ -33,27 +33,58 @@ router.post('/', auth, async (req, res) => {
 // Get all posts (with pagination) - No auth required
 router.get('/', async (req, res) => {
     try {
+        console.log('============ FETCHING POSTS ============');
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 10;
         const skip = (page - 1) * limit;
+
+        console.log('Pagination params:', { page, limit, skip });
 
         const posts = await Post.find()
             .sort({ createdAt: -1 })
             .skip(skip)
             .limit(limit)
             .populate('user', 'username profilePicture')
-            .populate('comments');
+            .populate({
+                path: 'comments',
+                populate: {
+                    path: 'user',
+                    select: 'username profilePicture'
+                }
+            });
+
+        console.log(`Found ${posts.length} posts`);
 
         const total = await Post.countDocuments();
+        console.log(`Total posts in database: ${total}`);
 
-        res.json({
+        const response = {
+            success: true,
             posts,
             currentPage: page,
             totalPages: Math.ceil(total / limit),
             totalPosts: total
+        };
+
+        console.log('Response prepared:', {
+            currentPage: response.currentPage,
+            totalPages: response.totalPages,
+            totalPosts: response.totalPosts
         });
+        console.log('=====================================');
+
+        res.json(response);
     } catch (error) {
-        res.status(500).json({ message: 'Server error' });
+        console.error('Error fetching posts:', {
+            message: error.message,
+            stack: error.stack,
+            name: error.name
+        });
+        res.status(500).json({ 
+            success: false,
+            message: 'Failed to load posts',
+            error: 'POSTS_FETCH_ERROR'
+        });
     }
 });
 
@@ -285,6 +316,48 @@ router.get('/trending', async (req, res) => {
         res.status(500).json({ 
             message: 'Server error',
             error: error.message 
+        });
+    }
+});
+
+// Cleanup orphaned posts (posts with non-existent users)
+router.delete('/cleanup/orphaned', auth, async (req, res) => {
+    try {
+        console.log('============ CLEANING UP ORPHANED POSTS ============');
+        
+        // Get all posts
+        const posts = await Post.find();
+        console.log(`Found ${posts.length} total posts`);
+
+        let deletedCount = 0;
+        let orphanedPosts = [];
+
+        // Check each post for valid user
+        for (const post of posts) {
+            const userExists = await User.exists({ _id: post.user });
+            if (!userExists) {
+                orphanedPosts.push(post._id);
+                await Post.deleteOne({ _id: post._id });
+                deletedCount++;
+            }
+        }
+
+        console.log(`Found ${orphanedPosts.length} orphaned posts`);
+        console.log('Deleted posts:', orphanedPosts);
+        console.log('================================================');
+
+        res.json({
+            success: true,
+            message: `Cleaned up ${deletedCount} orphaned posts`,
+            deletedCount,
+            orphanedPosts
+        });
+    } catch (error) {
+        console.error('Error cleaning up orphaned posts:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to clean up orphaned posts',
+            error: 'CLEANUP_FAILED'
         });
     }
 });
